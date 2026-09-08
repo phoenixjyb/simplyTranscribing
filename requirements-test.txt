@@ -1,0 +1,2 @@
+-r web-requirements.txt
+python-docx==1.2.0

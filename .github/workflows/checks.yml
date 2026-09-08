@@ -1,0 +1,27 @@
+name: Checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements-test.txt
+      - name: Check source syntax
+        run: |
+          python -m compileall -q .
+          bash -n run.sh service.sh web.sh
+          node --check web/app.js
+      - name: Run export, configuration and HTTP tests
+        run: python -m unittest discover -p 'test_*.py' -v
