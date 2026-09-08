@@ -1,17 +1,11 @@
 # Simply Transcribing
 
-This repository contains source and portable setup documentation for a private
-Windows/WSL transcription service. Keep model weights, recordings, generated
-transcripts, credentials, SSH configuration and machine-specific deployment
-evidence outside Git.
+This is a portable source repository. Keep runtime data, model weights, credentials, personal identifiers and private deployment records outside Git. Use feature branches and a reviewable pull request.
 
-- Preserve uncommitted work. Use feature branches after initial repository setup.
-- Keep the web backend on loopback behind Tailscale Serve. Its identity headers
-  are trusted only on this local proxy boundary; never bind it to the LAN.
-- Preserve the serial GPU queue and admission checks for shared GPU workloads.
-- Run `python -m unittest discover -p 'test_*.py' -v` with the CPU test dependencies
-  and ffprobe installed. CI does not validate CUDA inference or Windows boot.
-- Source publication does not authorize changing a live runtime. Deployments,
-  service restarts and data removal need scope from the user's current request.
-- Never reset existing scheduled tasks, overwrite web credentials or include
-  personal hostnames/account IDs in public setup examples.
+- CPU execution is the default. CUDA is optional, device-index based, and must retain admission checks. Never hard-code a GPU model or require CUDA packages on CPU hosts.
+- Run through `app.py`; core code must not require WSL, Bash or a scheduled task. Keep platform-specific examples separate.
+- Preserve the loopback security boundary and explicit authentication modes. Never expose trusted identity-header authentication on a public/LAN bind.
+- Use the runtime data directory, not the source checkout, for configuration and artifacts.
+- Run the CPU test suite, publication hygiene script and relevant platform/browser/inference checks. State which checks were actually run.
+- Do not change a running deployment, rewrite published history or remove user data without current task authority. Git publication and deployment are separate.
+- Use public-safe commit metadata. Never include private addresses or credentials in PR bodies or examples.

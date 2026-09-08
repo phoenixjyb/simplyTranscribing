@@ -39,7 +39,7 @@ class Exports(unittest.TestCase):
             model = SimpleNamespace(transcribe=lambda *a, **k: (interrupted(), SimpleNamespace(language='en', language_probability=1.0, duration_after_vad=3)))
             args = t.parser().parse_args([str(source), '--output-dir', str(out)])
             probe = json.dumps(dict(format=dict(duration='3'), streams=[dict(codec_type='audio')]))
-            with patch.object(t, 'ROOT', root), patch.object(t.subprocess, 'check_output', return_value=probe), patch.object(t.importlib.metadata, 'version', return_value='fixture'), patch.object(t, 'gpu_state', return_value=dict(uuid='fixture', free_mib=16000, utilization=0)), patch.object(t, 'cuda_free_mib', return_value=16000), patch.dict(t.os.environ):
+            with patch.object(t, 'ROOT', root), patch.object(t.subprocess, 'check_output', return_value=probe), patch.object(t.importlib.metadata, 'version', return_value='fixture'), patch.object(t, 'resolve_runtime', return_value=dict(device='cpu', device_index=0, compute_type='int8', admission=None)), patch.dict(t.os.environ):
                 with self.assertRaises(KeyboardInterrupt):
                     t.run(args, model_factory=lambda *a, **k: model)
             receipt = json.loads((out / 'run.json').read_text())

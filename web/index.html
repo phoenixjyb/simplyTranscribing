@@ -2,10 +2,10 @@
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Transcribe · Simply Transcribing</title><link rel="stylesheet" href="/assets/style.css"><script src="/assets/app.js" defer></script></head>
 <body>
-<header><a class="brand" href="/">◉ <span>Simply Transcribing</span></a><span class="private">Private · Tailscale</span></header>
+<header><a class="brand" href="/">◉ <span>Simply Transcribing</span></a><span class="private">Private workspace</span></header>
 <main>
-<div class="intro"><p class="eyebrow">FROM RECORDING TO READING</p><h1>Make room for the words.</h1><p>Upload a conversation, podcast or video. Your transcription PC turns it into a transcript you can read and keep.</p></div>
-<p id="connection" class="connection" role="status">Connecting to your home PC…</p>
+<div class="intro"><p class="eyebrow">FROM RECORDING TO READING</p><h1>Make room for the words.</h1><p>Upload a conversation, podcast or video. Your server turns it into a transcript you can read and keep.</p></div>
+<p id="connection" class="connection" role="status">Connecting to your server…</p>
 <div class="workspace">
 <section class="upload-panel" aria-labelledby="new-title"><div class="section-label">01 / NEW TRANSCRIPT</div><h2 id="new-title">What are we listening to?</h2>
 <form id="upload-form">
@@ -15,10 +15,10 @@
 <button id="submit" class="primary" type="submit" disabled>Create transcript <span aria-hidden="true">↗</span></button>
 <div id="upload-progress" hidden><div class="progress-label"><span id="upload-message">Uploading</span><span id="upload-percent"></span></div><progress id="upload-bar" max="100" value="0"></progress></div>
 <p id="upload-error" class="error" role="alert" hidden></p>
-</form><p class="footnote">Files and transcripts stay on your home PC. People with access to this service share this library. Keep this page open until the upload finishes; processing continues in the background.</p></section>
+</form><p class="footnote">Files and transcripts stay on your server. People with access to this service share this library. Keep this page open until the upload finishes; processing continues in the background.</p></section>
 <section class="library" aria-labelledby="library-title"><div class="library-heading"><div><div class="section-label">02 / YOUR LIBRARY</div><h2 id="library-title">Ready when you are.</h2></div><span id="job-count" class="count">0</span></div><div id="jobs"><p class="empty">Your recordings will appear here.</p></div></section>
 </div>
-<footer>Powered by your RTX 3090 <span>Automatic transcripts may contain mistakes. Speaker names are not assigned.</span></footer>
+<footer>Powered by local speech recognition <span>Automatic transcripts may contain mistakes. Speaker names are not assigned.</span></footer>
 </main>
 <dialog id="reader"><div class="reader-top"><div><p class="eyebrow">TRANSCRIPT</p><h2 id="reader-title"></h2></div><button id="close-reader" class="secondary" aria-label="Close transcript">Close ×</button></div><div id="reader-downloads" class="downloads"></div><p class="reader-note">Automatic transcript · timestamps follow the original recording.</p><div id="reader-content"></div></dialog>
 </body></html>

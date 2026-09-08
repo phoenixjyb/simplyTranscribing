@@ -1,4 +1,4 @@
-param([string]$Distro = 'Ubuntu-24.04')
+param([string]$Distro = 'Ubuntu-24.04', [string]$SourceRoot = '/opt/simply-transcribing')
 $ErrorActionPreference = 'Stop'
 $name = 'Local Transcriber Web'
 if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
@@ -10,8 +10,7 @@ $launcher = Join-Path $folder 'start-web.ps1'
 if (Test-Path $launcher) { throw 'Launcher already exists. Inspect before changing it.' }
 @"
 `$ErrorActionPreference = 'Stop'
-Start-ScheduledTask -TaskName 'Local Transcriber WSL'
-& `$env:WINDIR\System32\wsl.exe -d '$Distro' -- bash /opt/local-transcriber/web.sh
+& `$env:WINDIR\System32\wsl.exe -d '$Distro' -- $SourceRoot/.venv/bin/python $SourceRoot/app.py start
 exit `$LASTEXITCODE
 "@ | Set-Content -LiteralPath $launcher -Encoding UTF8
 $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
