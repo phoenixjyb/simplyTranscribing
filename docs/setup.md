@@ -57,6 +57,8 @@ For an individual file, `python transcribe.py recording.wav --output-dir new-res
 
 ## Optional CUDA
 
+For a complete Ubuntu walkthrough, including a machine that already has a working GPU driver, start with the **[Linux + NVIDIA CUDA tutorial](linux-cuda.md)**.
+
 Install a compatible NVIDIA driver, CUDA 12 runtime and cuDNN 9 according to [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and [CTranslate2 installation guidance](https://opennmt.net/CTranslate2/installation.html). Linux x86_64 users can install the optional Python CUDA libraries with `python -m pip install -r requirements-cuda.txt`; Windows users should install the appropriate NVIDIA system libraries and make their DLLs discoverable.
 
 The application launcher prepares library search paths before starting the worker. Use it for CUDA jobs, or configure library paths yourself when invoking `transcribe.py` directly. Set `device` to `cuda` and the desired `device_index` in the runtime configuration. Existing `CUDA_VISIBLE_DEVICES` filtering is respected; do not assume its logical index equals NVIDIA-SMI's physical index. Admission queries the CUDA-selected device's UUID to avoid checking a different GPU.

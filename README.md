@@ -40,6 +40,8 @@ Configuration, models and recordings live in the OS user-data directory, indepen
 
 See **[setup and configuration](docs/setup.md)** for CUDA, model choices, Tailscale access and upgrades. Platform-specific helpers are under [examples/wsl](examples/wsl/README.md), outside the core startup path.
 
+For a step-by-step GPU installation, follow **[Linux + NVIDIA CUDA tutorial](docs/linux-cuda.md)**: Ubuntu prerequisites, driver checks, GPU libraries, configuration, first transcription and troubleshooting.
+
 ## Hardware support
 
 | Host | Execution path | Notes |
