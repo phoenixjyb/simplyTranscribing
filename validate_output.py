@@ -7,15 +7,15 @@ import sys
 from transcribe import stamp, validate
 
 out = Path(sys.argv[1])
-run = json.loads((out / 'run.json').read_text())
+run = json.loads((out / 'run.json').read_text(encoding='utf-8'))
 assert run['complete'] and run['status'] == 'completed', 'Run not complete'
-data = json.loads((out / 'transcript.json').read_text())
+data = json.loads((out / 'transcript.json').read_text(encoding='utf-8'))
 segments = data['segments']
-journal = [json.loads(line) for line in (out / 'segments.jsonl').read_text().splitlines()]
+journal = [json.loads(line) for line in (out / 'segments.jsonl').read_text(encoding='utf-8').splitlines()]
 assert data['metadata'] == run and journal == segments
 assert run['segment_count'] == len(segments)
 validate(segments, run['duration_seconds'])
-cues = (out / 'transcript.srt').read_text().strip().split('\n\n') if segments else []
+cues = (out / 'transcript.srt').read_text(encoding='utf-8').strip().split('\n\n') if segments else []
 assert len(cues) == len(segments)
 for i, (cue, segment) in enumerate(zip(cues, segments), 1):
     lines = cue.splitlines()
@@ -24,7 +24,7 @@ for i, (cue, segment) in enumerate(zip(cues, segments), 1):
     assert '\n'.join(lines[2:]) == segment['text'].strip()
     for word in segment.get('words') or []:
         assert 0 <= word['start'] <= word['end'] <= run['duration_seconds'] + 0.5
-assert (out / 'transcript.txt').read_text() == '\n'.join(s['text'] for s in segments) + '\n'
+assert (out / 'transcript.txt').read_text(encoding='utf-8') == '\n'.join(s['text'] for s in segments) + '\n'
 gaps = []
 previous = 0
 for segment in segments:

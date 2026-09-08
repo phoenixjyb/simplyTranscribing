@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Submit audio/video to the home WSL worker and fetch documents over SSH."""
+"""Legacy client for the original fixed-layout WSL deployment; see examples/wsl/README.md."""
 import argparse
 import base64
 import io

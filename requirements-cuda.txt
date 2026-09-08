@@ -1,0 +1,4 @@
+# Optional Linux x86_64 CUDA 12 libraries. Windows uses NVIDIA system libraries.
+-r requirements.txt
+nvidia-cublas-cu12>=12.4,<13; sys_platform == "linux" and platform_machine == "x86_64"
+nvidia-cudnn-cu12>=9,<10; sys_platform == "linux" and platform_machine == "x86_64"

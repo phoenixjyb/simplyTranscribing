@@ -26,7 +26,7 @@ class WebTests(unittest.TestCase):
             s.bind(('127.0.0.1', 0))
             cls.port = s.getsockname()[1]
         cls.base = f'http://127.0.0.1:{cls.port}'
-        cls.server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'web:app', '--host', '127.0.0.1', '--port', str(cls.port), '--no-access-log'], env=dict(os.environ, TRANSCRIBER_ROOT=str(cls.root)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cls.server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'web:app', '--host', '127.0.0.1', '--port', str(cls.port), '--no-access-log', '--no-proxy-headers'], env=dict(os.environ, TRANSCRIBER_ROOT=str(cls.root)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
             try:
                 urllib.request.urlopen(cls.base + '/health', timeout=1).close()
@@ -57,6 +57,16 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request('/api/jobs', auth=False, headers={'Tailscale-User-Login': 'family@example.test'})[0], 200)
         self.assertEqual(self.request('/api/jobs', b'x')[0], 403)
         self.assertEqual(self.request('/api/jobs', b'x', {'X-Transcriber-Request': '1', 'Origin': 'https://evil.example'})[0], 403)
+
+    def test_local_mode_rejects_untrusted_hosts(self):
+        config = self.root / 'web-config.json'
+        previous = config.read_text()
+        try:
+            config.write_text(json.dumps(dict(auth_mode='local')))
+            self.assertEqual(self.request('/api/jobs', auth=False)[0], 200)
+            self.assertEqual(self.request('/api/jobs', auth=False, headers={'Host': 'attacker.example'})[0], 403)
+        finally:
+            config.write_text(previous)
 
     def test_bad_media_and_size(self):
         headers = {'X-Transcriber-Request': '1'}

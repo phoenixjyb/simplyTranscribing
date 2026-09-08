@@ -6,7 +6,10 @@ import shlex
 import tempfile
 import unittest
 from unittest.mock import patch
-import bridge
+import importlib.util
+_spec = importlib.util.spec_from_file_location("bridge", Path(__file__).parent / "examples/wsl/bridge.py")
+bridge = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(bridge)
 from configure_web import configure
 
 
@@ -40,7 +43,8 @@ class ConfigurationTests(unittest.TestCase):
             result = json.loads(path.read_text())
             self.assertEqual(result['admin_token'], token)
             self.assertEqual(result['allowed_logins'], ['second@example.test'])
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            if os.name != 'nt':
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             with self.assertRaises(ValueError):
                 configure(root, [''])
             self.assertEqual(json.loads(path.read_text()), result)

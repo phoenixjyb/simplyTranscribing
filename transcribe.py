@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Single-job CUDA transcription with durable progress and original timestamps."""
+"""Single-job CPU/CUDA transcription with durable progress and original timestamps."""
 import argparse
-import ctypes
 import dataclasses
 import datetime as dt
-import fcntl
+from filelock import FileLock, Timeout
+from settings import data_root, runtime_settings, MODELS
+from runtime import resolve_runtime
 import hashlib
 import importlib.metadata
 import json
@@ -16,7 +17,7 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 
 def stamp(seconds):
     milliseconds = round(seconds * 1000)
@@ -46,41 +47,6 @@ def plain(value):
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
-
-def gpu_state():
-    command = ['/usr/lib/wsl/lib/nvidia-smi', '--query-gpu=name,uuid,driver_version,memory.free,memory.used,utilization.gpu', '--format=csv,noheader,nounits']
-    for line in subprocess.check_output(command, text=True).splitlines():
-        name, uuid, driver, free, used, util = [s.strip() for s in line.split(',')]
-        if 'RTX 3090' in name:
-            return dict(name=name, uuid=uuid, driver=driver, free_mib=int(free), used_mib=int(used), utilization=int(util))
-    raise RuntimeError('RTX 3090 not visible; refusing to select another GPU')
-
-def cuda_free_mib():
-    """Check driver allocation headroom as well as WDDM nvidia-smi accounting."""
-    cuda = ctypes.CDLL('libcuda.so.1')
-    def check(code):
-        if code != 0:
-            raise RuntimeError(f'CUDA driver admission check failed with code {code}')
-    check(cuda.cuInit(0))
-    device = ctypes.c_int()
-    count = ctypes.c_int()
-    check(cuda.cuDeviceGetCount(ctypes.byref(count)))
-    for index in range(count.value):
-        check(cuda.cuDeviceGet(ctypes.byref(device), index))
-        name = ctypes.create_string_buffer(256)
-        check(cuda.cuDeviceGetName(name, 256, device))
-        if b'RTX 3090' in name.value:
-            break
-    else:
-        raise RuntimeError('CUDA driver cannot find the RTX 3090')
-    context = ctypes.c_void_p()
-    check(cuda.cuCtxCreate_v2(ctypes.byref(context), 0, device))
-    try:
-        free, total = ctypes.c_size_t(), ctypes.c_size_t()
-        check(cuda.cuMemGetInfo_v2(ctypes.byref(free), ctypes.byref(total)))
-        return free.value // (1024 * 1024)
-    finally:
-        check(cuda.cuCtxDestroy_v2(context))
 
 def validate(segments, duration):
     previous = 0.0
@@ -140,10 +106,11 @@ def run(args, model_factory=None):
     out = Path(args.output_dir).expanduser().resolve()
     if out.exists() and any(out.iterdir()):
         raise ValueError('Output directory is occupied; choose a new job/output directory')
-    lock = (ROOT / '.gpu.lock').open('a')
+    ROOT.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(ROOT / '.inference.lock')
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+        lock.acquire(timeout=0)
+    except Timeout:
         raise RuntimeError('Another transcription is running; retry when it finishes') from None
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -151,7 +118,7 @@ def run(args, model_factory=None):
     save_json(out / 'run.json', metadata)
     segments = []
     try:
-        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(source)], text=True))
+        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(source)], text=True, encoding='utf-8'))
         streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']
         if not streams:
             raise ValueError('Input has no audio stream')
@@ -160,25 +127,20 @@ def run(args, model_factory=None):
             raise ValueError('Input duration must be finite and positive')
         with source.open('rb') as stream:
             metadata['input_sha256'] = hashlib.file_digest(stream, 'sha256').hexdigest()
-        metadata['versions'] = {p: importlib.metadata.version(p) for p in ['faster-whisper', 'ctranslate2', 'av', 'nvidia-cublas-cu12', 'nvidia-cudnn-cu12', 'python-docx']}
-        before = gpu_state()
-        os.environ['CUDA_VISIBLE_DEVICES'] = before['uuid']
-        free_cuda = cuda_free_mib()
-        metadata['gpu_before'] = before
-        metadata['cuda_free_mib_before'] = free_cuda
-        if min(before['free_mib'], free_cuda) < 10240:
-            raise RuntimeError('RTX 3090 has less than 10 GiB free; retry after other work finishes')
-        if before['utilization'] > 50:
-            raise RuntimeError('RTX 3090 is busy; retry after other work finishes')
+        metadata['versions'] = {p: importlib.metadata.version(p) for p in ['faster-whisper', 'ctranslate2', 'av', 'python-docx']}
+        selected = resolve_runtime(args)
+        metadata.update(device=selected['device'], device_index=selected['device_index'], compute_type=selected['compute_type'])
+        # Device UUID/headroom stay in private run diagnostics, not web exports.
+        metadata['gpu_admission'] = selected['admission']
         if model_factory is None:
             from faster_whisper import WhisperModel
             model_factory = WhisperModel
         model_path = ROOT / 'models' / args.model
         model_name = str(model_path) if model_path.exists() else args.model
-        model = model_factory(model_name, device='cuda', device_index=0, compute_type=args.compute_type, download_root=str(ROOT / 'models'), local_files_only=args.offline)
+        model = model_factory(model_name, device=selected['device'], device_index=selected['device_index'], compute_type=selected['compute_type'], cpu_threads=args.cpu_threads, download_root=str(ROOT / 'models'), local_files_only=args.offline)
         receipt = ROOT / 'models' / (args.model + '.receipt.json')
         if receipt.exists():
-            metadata['model_receipt'] = json.loads(receipt.read_text())
+            metadata['model_receipt'] = json.loads(receipt.read_text(encoding='utf-8'))
         result, info = model.transcribe(str(source), language=None if args.language == 'auto' else args.language, task='transcribe', beam_size=5, vad_filter=not args.no_vad, vad_parameters=dict(min_silence_duration_ms=2000) if not args.no_vad else None, word_timestamps=True, initial_prompt=args.initial_prompt)
         metadata['language_detected'] = info.language
         metadata['language_probability'] = info.language_probability
@@ -196,7 +158,6 @@ def run(args, model_factory=None):
                 print(f"{item['end']:.1f}/{metadata['duration_seconds']:.1f}s | {item['text']}", flush=True)
         metadata['segment_count'] = len(segments)
         metadata['elapsed_seconds'] = round(time.monotonic() - started, 3)
-        metadata['gpu_after_decode'] = gpu_state()
         metadata['coverage_review'] = dict(first_segment_start=segments[0]['start'] if segments else None, last_segment_end=segments[-1]['end'] if segments else None, audio_quality_reviewed=False, note='Export consistency does not establish speech accuracy or full speech coverage')
         # Exports are final only when run.json.complete becomes true below.
         export(out, segments, metadata)
@@ -209,22 +170,30 @@ def run(args, model_factory=None):
         save_json(out / 'run.json', metadata)
         raise
     finally:
-        lock.close()
+        lock.release()
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('input')
     p.add_argument('--output-dir', required=True)
-    p.add_argument('--model', default='large-v3', choices=['large-v3'])
+    defaults = runtime_settings(ROOT)
+    p.add_argument('--model', default=defaults['model'], choices=MODELS)
     p.add_argument('--language', default='auto', help='auto, en, zh, or another Whisper language code')
-    p.add_argument('--compute-type', default='float16', choices=['float16', 'int8_float16'])
+    p.add_argument('--device', default=defaults['device'], choices=['cpu', 'cuda', 'auto'])
+    p.add_argument('--device-index', type=int, default=defaults['device_index'])
+    p.add_argument('--compute-type', default=defaults['compute_type'], choices=['auto', 'int8', 'float32', 'float16', 'int8_float16'])
+    p.add_argument('--cpu-threads', type=int, default=defaults['cpu_threads'])
+    p.add_argument('--min-free-mib', type=int, default=defaults['min_free_mib'])
+    p.add_argument('--max-gpu-utilization', type=int, default=defaults['max_gpu_utilization'])
     p.add_argument('--no-vad', action='store_true')
     p.add_argument('--initial-prompt')
     p.add_argument('--title', help='Readable source title for document exports')
-    p.add_argument('--offline', action='store_true')
+    p.add_argument('--offline', action=argparse.BooleanOptionalAction, default=defaults['offline'])
     return p
 
 if __name__ == '__main__':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
     signal.signal(signal.SIGTERM, lambda *_: sys.exit('Terminated'))
     try:
         run(parser().parse_args())

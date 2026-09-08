@@ -1,106 +1,102 @@
-# Installation and updates
+# Setup and configuration
 
-## 1. Prepare the Windows host
+## Runtime requirements
 
-Install Ubuntu 24.04 under WSL2 and a Windows NVIDIA driver that exposes the RTX 3090 to WSL. Confirm the GPU in Ubuntu with `/usr/lib/wsl/lib/nvidia-smi`. The worker explicitly selects an RTX 3090 and requires at least 10 GiB free according to both NVIDIA-SMI and the CUDA driver, with GPU utilization no higher than 50% at admission. It does not stop other GPU workloads or reserve capacity against another service starting later.
+Use Python 3.11 or newer and FFmpeg with `ffprobe` available on PATH. Install the application in its own virtual environment. Linux, macOS and native Windows use the same `python app.py init` / `python app.py start` flow in the README. There is no requirement for WSL, a particular GPU, a paid service or Tailscale.
 
-The Windows scheduled tasks must run as the same Windows user that owns this WSL distribution. Confirm `wsl.exe -l -v` before proceeding. Keep runtime files on the Linux filesystem rather than a Windows-mounted drive.
+The project is installed from source; no PyPI package or container image is currently published. A process supervisor can run `python app.py start` for unattended operation. Run initialization and the supervisor under the same OS account or explicitly provide the same `TRANSCRIBER_DATA_DIR`.
 
-## 2. Install a fresh runtime in WSL
+## Data directory
 
-The commands below are for a **new installation only**. If `/opt/local-transcriber` already exists, preserve it and use the update section.
+The default directory is:
 
-```bash
-sudo apt-get update
-sudo apt-get install -y python3-venv ffmpeg curl git
-sudo mkdir /opt/local-transcriber
-sudo chown "$USER":"$(id -gn)" /opt/local-transcriber
-git clone https://github.com/phoenixjyb/simplyTranscribing.git /opt/local-transcriber
-cd /opt/local-transcriber
-umask 077
-python3 -m venv .venv
-.venv/bin/python -m pip install -r web-requirements.lock.txt
-.venv/bin/python -m pip check
-mkdir -p input output jobs logs models
-chmod 700 run.sh service.sh web.sh
-.venv/bin/python download_model.py
-```
-
-The full lock file is a reference Python 3.12/Linux installation, including both the web and CUDA inference packages. `requirements.txt` and `web-requirements.txt` specify direct dependencies if you need to resolve them separately. Never install these into an unrelated application's environment.
-
-Model downloads default to the official Hugging Face host. If that host is unreachable, an explicitly chosen mirror can be configured with `HF_ENDPOINT`, for example `HF_ENDPOINT=https://hf-mirror.com .venv/bin/python download_model.py`. Every selected file is checked against the pinned manifest regardless of download host. Do not proceed until it prints `MODEL_FILES_VERIFIED`. No model weights are included in Git.
-
-## 3. Configure account access
-
-Use the exact login identities Tailscale reports, such as email addresses or a `username@github` login. Replace the illustrative values:
-
-```bash
-cd /opt/local-transcriber
-.venv/bin/python configure_web.py \
-  --allow-login 'first@example.com' \
-  --allow-login 'second@example.com'
-```
-
-This creates private `web-config.json` with file mode 0600. On later runs it **replaces the full allowlist** while preserving the maintenance token. Include everyone who should retain access. The web server reloads this configuration on each request. With no allowed login and no valid maintenance token, job APIs deny access.
-
-Accounts must also have access to the node through Tailscale membership or sharing and the applicable tailnet policy. Do not commit this file, put its maintenance token in browser JavaScript, or publish the real account list.
-
-## 4. Register Windows tasks
-
-In a Windows PowerShell session with permission to register tasks for the Windows user owning the distro, run the scripts from a source checkout or the WSL share:
-
-```powershell
-& '\\wsl.localhost\Ubuntu-24.04\opt\local-transcriber\install-service.ps1'
-& '\\wsl.localhost\Ubuntu-24.04\opt\local-transcriber\install-web.ps1'
-Get-ScheduledTask -TaskName 'Local Transcriber WSL','Local Transcriber Web'
-curl.exe http://127.0.0.1:8020/health
-```
-
-If PowerShell execution policy blocks a downloaded script, review it and use your organization's approved script execution procedure. The web task's installed launcher uses a process-scoped execution-policy option; the scripts do not alter machine policy.
-
-The scripts refuse to overwrite an existing task. The new web task starts at Windows boot, starts the queue task, and holds WSL open in the foreground. Both run as a limited S4U principal, have no execution time limit and permit three restart attempts. They do not wake the PC. The web task writes a launcher under the current Windows user's `.local-transcriber` folder. No other application's tasks are changed.
-
-## 5. Serve privately with Tailscale
-
-Install Tailscale on Windows, sign in to the desired account and enable unattended mode. Inspect any existing Serve configuration before adding a handler:
-
-```powershell
-$ts = 'C:\Program Files\Tailscale\tailscale.exe'
-& $ts up --unattended=true
-& $ts status
-& $ts serve status
-& $ts serve --bg http://127.0.0.1:8020
-```
-
-Use the HTTPS URL printed by Serve. The tailnet administrator may need to enable HTTPS certificates or Serve when prompted. If HTTPS port 443 already serves another application, choose a separate supported Serve port and retain that application's handler.
-
-The backend binds only to `127.0.0.1:8020`. **Do not bind it to `0.0.0.0` or expose it through a generic public reverse proxy.** It trusts identity headers provided by the local Tailscale proxy. This setup uses private Serve; it does not enable Funnel.
-
-Connect each client to Tailscale and verify the library, a small upload, progress and a download. If a shell-level HTTP proxy intercepts private addresses, try `curl --noproxy '*' https://YOUR-NODE.YOUR-TAILNET.ts.net/health` and configure private-host bypasses in that client as needed. Avoid changing unrelated global network settings.
-
-References: [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve), [Serve CLI](https://tailscale.com/docs/reference/tailscale-cli/serve), [Windows unattended mode](https://tailscale.com/docs/how-to/run-unattended).
-
-## Optional SSH client
-
-Configure Windows OpenSSH and a private host alias in the submitting computer's SSH configuration. Set `TRANSCRIBER_WINDOWS_ALIAS` to that alias. Optional variables:
-
-| Variable | Meaning |
+| Platform | Default |
 | --- | --- |
-| `TRANSCRIBER_WINDOWS_ALIAS` | Required Windows SSH host/alias; never a command string |
-| `TRANSCRIBER_DISTRO` | WSL distribution; defaults to `Ubuntu-24.04` |
-| `TRANSCRIBER_RELAY_HELPER` | Optional executable wrapper accepting `PROFILE REMOTE_COMMAND` |
-| `TRANSCRIBER_RELAY_PROFILE` | Required explicit profile when a helper is configured |
+| Linux | `$XDG_DATA_HOME/simply-transcribing`, or `~/.local/share/simply-transcribing` |
+| macOS | `~/Library/Application Support/simply-transcribing` |
+| Windows | `%LOCALAPPDATA%\simply-transcribing` |
 
-Without a helper, the client uses ordinary SSH; private SSH configuration may define a jump host. With a helper, that helper opens the relay and executes the quoted Windows SSH command there. Keep helper credentials/configuration outside this repository. The supplied client uses base64-encoded PowerShell to preserve arguments through Windows quoting rules.
+Override it before initialization and every subsequent command:
 
-For media already on the host, submit a WSL path with `--remote`. `--initial-prompt` can provide a recognition glossary and `--no-vad` disables voice activity filtering for a targeted rerun. Always use a new job/output directory.
+```bash
+# Linux/macOS example
+export TRANSCRIBER_DATA_DIR="$HOME/transcription-data"
+```
 
-## Update an existing installation
+```powershell
+# Windows PowerShell example
+$env:TRANSCRIBER_DATA_DIR = Join-Path $env:LOCALAPPDATA 'transcription-data'
+```
 
-Publication to GitHub and deployment are separate operations. Preserve the existing input/output directories, model installation, credentials and other services. Review the source diff and run CPU tests before a live update.
+Private configuration and artifacts belong here, never in a public source checkout. The earlier `TRANSCRIBER_ROOT` variable is accepted as a compatibility alias. Avoid committing either environment values or the contents of the directory.
 
-For a host with this repository checked out and no conflicting local edits, fetch and review the intended revision, then update deliberately. An older installation without Git can receive worker source with `python3 deploy_source.py` and web source with `python3 deploy_web.py` from a configured client. These use the standard runtime path and preserve existing web credentials; they do not install dependencies or restart tasks.
+## Inference settings
 
-Wait for uploads to finish before restarting only `Local Transcriber Web` for backend changes. Wait until the queue is idle before restarting `Local Transcriber WSL` for worker changes. Do not interrupt another application's processes to free GPU capacity. Verify web, queue, model files, GPU headroom and incumbent workloads separately after deployment.
+Edit `runtime.json` in the data directory. Settings are read for each new job:
 
-To disable only this Serve mapping, use `tailscale serve --https=443 off`, after confirming it still refers to this application. Keep recordings and documents unless removal is explicitly intended.
+```json
+{
+  "model": "base",
+  "device": "cpu",
+  "device_index": 0,
+  "compute_type": "auto",
+  "cpu_threads": 4,
+  "min_free_mib": 1024,
+  "max_gpu_utilization": 50,
+  "offline": false
+}
+```
+
+- Models: `tiny`, `base`, `small`, `medium`, `large-v3`; English-only `.en` variants are available except for `large-v3`.
+- Device: `cpu` is predictable and does not probe the CUDA driver. `cuda` explicitly selects NVIDIA execution; `auto` selects CUDA if visible, otherwise CPU. A busy or misconfigured selected CUDA device causes a readable failure, not an unannounced CPU retry.
+- Compute type: `auto` prefers `int8` on CPU and `float16` on CUDA, using `float32` when needed. Explicit choices are checked against CTranslate2's runtime capabilities.
+- CUDA admission: `min_free_mib` and `max_gpu_utilization` apply to the chosen CUDA-visible ordinal. Increase the minimum for a larger model or shared host. Admission is a preflight check, not a reservation; another process can consume resources later.
+- Offline: `false` permits first-use model download; `true` requires a cached model. `python download_model.py --model small --revision REVISION` can pin a selected model revision before an offline deployment. Set `HF_ENDPOINT` before starting the process if you deliberately use a model mirror.
+
+For an individual file, `python transcribe.py recording.wav --output-dir new-results --device cpu --model tiny` bypasses the web queue. A fresh output directory is required. CLI exports include private provenance diagnostics; browser JSON downloads are sanitized. Run `python validate_output.py OUTPUT_DIRECTORY` to check export consistency, then review actual recognition against the recording.
+
+## Optional CUDA
+
+For a complete Ubuntu walkthrough, including a machine that already has a working GPU driver, start with the **[Linux + NVIDIA CUDA tutorial](linux-cuda.md)**.
+
+Install a compatible NVIDIA driver, CUDA 12 runtime and cuDNN 9 according to [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and [CTranslate2 installation guidance](https://opennmt.net/CTranslate2/installation.html). Linux x86_64 users can install the optional Python CUDA libraries with `python -m pip install -r requirements-cuda.txt`; Windows users should install the appropriate NVIDIA system libraries and make their DLLs discoverable.
+
+The application launcher prepares library search paths before starting the worker. Use it for CUDA jobs, or configure library paths yourself when invoking `transcribe.py` directly. Set `device` to `cuda` and the desired `device_index` in the runtime configuration. Existing `CUDA_VISIBLE_DEVICES` filtering is respected; do not assume its logical index equals NVIDIA-SMI's physical index. Admission queries the CUDA-selected device's UUID to avoid checking a different GPU.
+
+The default CPU path does not require `nvidia-smi`, CUDA libraries or a GPU. Apple Metal/MPS and AMD GPU backends are not implemented.
+
+## Access modes
+
+### Local browser
+
+`python app.py init` defaults to local mode. Open `http://127.0.0.1:8020` on the server itself. The server checks the client and Host header against loopback addresses. Do not forward this mode to other machines. A local OS account/process is trusted at this boundary.
+
+### Tailscale
+
+For a fresh instance:
+
+```bash
+python app.py init --auth tailscale --allow-login first@example.com --allow-login second@example.com
+python app.py start
+```
+
+Use exact login identities from your Tailscale account and replace the examples. To explicitly replace access on an already configured instance, use `python configure_web.py --allow-login first@example.com --allow-login second@example.com`; this selects Tailscale mode, replaces the complete allowlist and preserves the maintenance token.
+
+Install Tailscale on the server and clients, grant appropriate tailnet/node access, and inspect existing Serve routes before adding this one:
+
+```bash
+tailscale serve status
+tailscale serve --bg http://127.0.0.1:8020
+```
+
+Open the HTTPS address printed by Serve while connected to Tailscale. No personal server URL belongs in public setup documents. Windows hosts may need `tailscale up --unattended=true` for service operation outside a desktop login. The tailnet administrator may need to enable HTTPS/Serve.
+
+Tailscale is optional. In both modes the backend binds only to loopback and ignores forwarded-client headers. Never expose trusted Tailscale identity headers through an arbitrary LAN/public reverse proxy. If port 443 already serves another application, preserve its configuration and use a suitable separate Serve port. See [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve).
+
+## Operation and upgrades
+
+The launcher runs one web process and one queue worker. The model lives in a separate process per job. Keep the host awake. Closing the browser after an accepted upload does not stop processing. Stopping the launcher requests worker shutdown and terminates an active inference; partial results remain and the job must be resubmitted. Abrupt OS termination can also leave a stale running receipt until the worker restarts.
+
+Upgrade source only after reviewing changes and completing active work. Keep the data directory and existing model cache. Back up configuration and recordings according to your requirements. Do not automatically restart unrelated GPU services or change their environment to accommodate an upgrade.
+
+For the initial source-relative WSL release, explicitly set `TRANSCRIBER_DATA_DIR` to its existing runtime directory, retain its private `web-config.json`, and create a reviewed `runtime.json` with the intended model/device before migration. Existing configs without `auth_mode` remain Tailscale-restricted. Disable the old worker/web tasks only as part of an authorized cutover; never run old and new worker versions against the same queue. The previous frozen dependency snapshots and source-copy deployment helpers are retired because they were tied to one installation.

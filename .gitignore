@@ -34,3 +34,9 @@ private/
 *.webm
 *.docx
 *.srt
+runtime.json
+.stop-worker
+*.aiff
+*.aif
+
+.stop-app

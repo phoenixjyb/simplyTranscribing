@@ -10,11 +10,12 @@ import shutil
 import time
 from urllib.parse import urlsplit
 import uuid
+from settings import data_root
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
-ROOT = Path(os.environ.get('TRANSCRIBER_ROOT', Path(__file__).resolve().parent))
+ROOT = data_root()
 STATIC = Path(__file__).resolve().parent / 'web'
 MAX_BYTES = 2 * 1024**3
 MAX_DURATION = 6 * 3600
@@ -26,20 +27,25 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 def read_json(path):
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
 
 
 def identity(request):
     config = read_json(ROOT / 'web-config.json')
+    if config.get('auth_mode') == 'local':
+        host = request.url.hostname
+        if host in ('localhost', '127.0.0.1', '::1') and request.client and request.client.host in ('127.0.0.1', '::1'):
+            return 'Local user'
+        raise HTTPException(403, 'Local mode accepts only loopback browser access')
     admin = request.headers.get('x-transcriber-admin', '')
     if admin and config.get('admin_token') and hmac.compare_digest(admin, config['admin_token']):
         return 'Local administrator'
     login = request.headers.get('tailscale-user-login', '').strip().lower()
     if login and login in [s.lower() for s in config.get('allowed_logins', [])]:
         return login
-    raise HTTPException(403, 'Connect through Tailscale using an allowed account. Access is limited to configured accounts.')
+    raise HTTPException(403, 'Access denied. Use the configured local browser or an allowed Tailscale account.')
 
 
 @app.middleware('http')
@@ -104,7 +110,7 @@ def public_job(job_id):
     if status in ('failed', 'interrupted'):
         reason = str(run.get('error') or job.get('error') or '')
         error = 'The worker restarted before this job finished. Upload again to retry.' if status == 'interrupted' else 'Transcription failed. Try uploading again; the original job is preserved.'
-        if '10 GiB' in reason or 'busy' in reason:
+        if 'GPU admission' in reason:
             error = 'The GPU is busy with another service. Please retry when it is available.'
     return dict(id=job_id, title=job.get('title') or 'Untitled recording', status=stage,
                 complete=completed, progress=percent, processed_seconds=processed,
@@ -119,13 +125,7 @@ def public_job(job_id):
 def jobs(request: Request):
     paths = sorted((ROOT / 'jobs').glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)
     health = read_json(ROOT / 'service-health.json')
-    alive = False
-    try:
-        if health.get('pid'):
-            os.kill(int(health['pid']), 0)
-            alive = True
-    except (OSError, ValueError):
-        pass
+    alive = health.get('status') in ('ready', 'busy') and 0 <= time.time() - health.get('checked_at', 0) < 15
     return dict(user=request.state.user, worker=health.get('status', 'offline') if alive else 'offline',
                 jobs=[public_job(p.stem) for p in paths if re.fullmatch('[a-f0-9]{12}', p.stem)],
                 max_bytes=MAX_BYTES, max_duration_seconds=MAX_DURATION)
@@ -208,7 +208,7 @@ async def upload(request: Request, filename: str = 'recording', title: str = '',
                        initial_prompt=None, submitted_by=request.state.user)
         queue = ROOT / 'jobs' / (job_id + '.json')
         temporary = queue.with_suffix('.json.tmp')
-        with temporary.open('x') as stream:
+        with temporary.open('x', encoding='utf-8') as stream:
             json.dump(payload, stream, ensure_ascii=False)
             stream.flush()
             os.fsync(stream.fileno())

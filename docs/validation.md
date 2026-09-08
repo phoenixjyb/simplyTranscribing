@@ -1,15 +1,9 @@
-# Validation record
+# Validation boundaries
 
-The initial implementation was exercised on an RTX 3090 under Ubuntu 24.04/WSL2 with Whisper large-v3, faster-whisper 1.2.1 and CTranslate2 4.8.2. Model files were verified against the pinned manifest.
+Automated tests cover export consistency, retained partial output, runtime configuration, CPU/CUDA device and compute-type selection, GPU admission failures, local/Tailscale access controls, upload validation and queue progress. Inference is mocked in the regular test suite; generated media is probed with FFprobe. A three-OS CI matrix targets Linux, macOS and Windows with Python 3.12.
 
-Observed reference runs included a full 43-minute recording and shorter audio/video checks. A 90-second browser-uploaded clip produced 22 segments in approximately 24 seconds of worker time; intermediate browser progress was observed before completion. These are examples, not a throughput guarantee.
+These checks do not prove word accuracy, GPU driver compatibility or unattended host durability. A deployment should separately verify a bounded real CPU or GPU transcription, visible browser progress, document downloads and the intended client access route. Keep actual recordings, host identifiers, GPU serials and private logs outside public evidence.
 
-The original deployment passed real browser upload, intermediate progress, GPU completion, transcript preview, Word download, mobile layout and denied unauthenticated access. A client connected through real Tailscale HTTPS without a maintenance credential and downloaded a Word document matching the previously reviewed output byte-for-byte. Unrelated GPU services stayed healthy and GPU allocation returned to its pre-job baseline.
+Use `python validate_output.py OUTPUT_DIRECTORY` to compare exports and timestamp journals, then review names, technical terms, gaps and repeated phrases against the audio. State explicitly whether evidence comes from mocked tests, real inference, browser rendering, or a live deployment. No public performance guarantee is made for a particular recording length or hardware model.
 
-The source prepared for this repository includes portable SSH configuration, neutral UI labels and a configuration helper. The export, interruption-recovery, SSH argument/configuration and HTTP tests exercise the packaged source without loading a model. CI runs those CPU tests; it does not run inference, register Windows tasks or contact a private tailnet.
-
-Before the initial publication, all ten packaged tests passed in an isolated temporary directory on the reference WSL host. The revised SSH transport also passed read-only PowerShell parameter-block and WSL execution checks. Python, shell and browser JavaScript syntax checks passed; the neutral UI screenshot and a 390-pixel layout were inspected without exposing real jobs.
-
-The live deployment and repository snapshot should not be assumed identical after future source changes. Actual reboot/sleep-wake behavior, arbitrary-length recordings, every client device and transcription word accuracy require separate acceptance checks. A successful export-consistency test does not establish speech accuracy. Review names, technical terms, substantial gaps and repeated phrases against the audio when quality matters.
-
-Personal recordings, actual transcripts, raw deployment logs, account identities and host addresses are intentionally excluded from this repository. The README screenshot uses synthetic illustrative jobs.
+For this portability change, the 17-test suite passed on macOS, and the earlier 16-test suite passed in an isolated WSL directory. A real synthetic speech sample was also transcribed with CUDA hidden, using CPU int8 execution; its expected two sentences were recovered. The launcher lifecycle check was subsequently added to the three-OS CI matrix. These are bounded implementation checks, not general accuracy or performance claims.
