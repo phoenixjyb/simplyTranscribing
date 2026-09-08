@@ -2,8 +2,6 @@
 
 This walkthrough uses **Ubuntu 24.04 LTS on x86_64** and its Python 3.12. Other Linux distributions need equivalent OS packages. You can use an existing Linux GPU workstation or server; WSL and a particular GPU model are not required. ARM/Jetson installations need a separate compatible dependency stack and are outside this walkthrough.
 
-**Release status:** these instructions accompany the portability work in [PR #1](https://github.com/phoenixjyb/simplyTranscribing/pull/1). Until it is merged, use the branch shown below; the initial `main` implementation does not have this setup flow.
-
 ## What to install
 
 | Component | Purpose | Installation |
@@ -53,7 +51,7 @@ sudo apt install -y git python3 python3-venv python3-pip ffmpeg
 python3 --version
 ffprobe -version
 
-git clone --branch codex/portable-open-source https://github.com/phoenixjyb/simplyTranscribing.git
+git clone https://github.com/phoenixjyb/simplyTranscribing.git
 cd simplyTranscribing
 python3 -m venv .venv
 source .venv/bin/activate
@@ -62,7 +60,7 @@ python -m pip install -r requirements-cuda.txt
 python -m pip check
 ```
 
-After PR #1 is merged, a normal clone of `main` can be used. If you already have this checkout, enter it and activate its virtual environment instead of cloning again. Use [upgrade guidance](setup.md#operation-and-upgrades) for an existing service.
+If you already have this checkout, enter it and activate its virtual environment instead of cloning again. Use [upgrade guidance](setup.md#operation-and-upgrades) for an existing service.
 
 Internet access is needed for packages and the initial model download. Model and GPU-library downloads can be large; keep sufficient free disk space. No model files belong in the Git checkout.
 
